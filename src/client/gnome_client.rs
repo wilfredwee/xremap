@@ -1,5 +1,8 @@
+use std::collections::HashMap;
+
+use zbus::{blocking::Connection, zvariant::Value};
+
 use crate::client::Client;
-use zbus::Connection;
 
 pub struct GnomeClient {
     connection: Option<Connection>,
@@ -11,7 +14,7 @@ impl GnomeClient {
     }
 
     fn connect(&mut self) {
-        match Connection::new_session() {
+        match Connection::session() {
             Ok(connection) => self.connection = Some(connection),
             Err(e) => println!("GnomeClient#connect() failed: {}", e),
         }
@@ -31,23 +34,53 @@ impl Client for GnomeClient {
             None => return None,
         };
 
-        let code = "
-            const actor = global.get_window_actors().find(a=>a.meta_window.has_focus()===true)
-            actor && actor.get_meta_window().get_wm_class()
-        ";
-        if let Ok(message) = connection.call_method(
-            Some("org.gnome.Shell"),
-            "/org/gnome/Shell",
-            Some("org.gnome.Shell"),
-            "Eval",
-            &(code),
-        ) {
-            if let Ok((_actor, json)) = message.body::<(bool, String)>() {
-                if let Ok(wm_class) = serde_json::from_str::<String>(&json) {
-                    return Some(wm_class);
+        let message = connection
+            .call_method(
+                Some("org.gnome.Shell.Introspect"),
+                "/org/gnome/Shell/Introspect",
+                Some("org.gnome.Shell.Introspect"),
+                "GetWindows",
+                &(),
+            )
+            .map_err(|err| {
+                eprintln!("Error calling GNOME shell: {:?}", err);
+                err
+            })
+            .ok()?;
+
+        let windows = message
+            .body::<HashMap<u64, HashMap<String, Value<'_>>>>()
+            .map_err(|err| {
+                eprintln!("Error deserializing body: {:?}. Message: {message:?}", err);
+                err
+            })
+            .ok()?;
+
+        let focused_window = windows.iter().find(|(_window_id, properties)| {
+            properties
+                .get("has-focus")
+                .map(|val| {
+                    if let &Value::Bool(bool_val) = val {
+                        bool_val
+                    } else {
+                        eprintln!("Unexpectedly did not get boolean value from has-focus. Got {val:?} instead.");
+                        false
+                    }
+                })
+                .unwrap_or(false)
+        });
+
+        let wm_class = focused_window
+            .and_then(|(_window_id, properties)| properties.get("wm-class"))
+            .and_then(|wm_class| {
+                if let Value::Str(wm_class_str) = wm_class {
+                    Some(wm_class_str.to_string())
+                } else {
+                    eprintln!("Unexpectedly did not get string value from wm-class. Got {wm_class:?} instead.");
+                    None
                 }
-            }
-        }
-        None
+            });
+
+        wm_class
     }
 }
