@@ -36,9 +36,9 @@ impl Client for GnomeClient {
 
         let message = connection
             .call_method(
-                Some("org.gnome.Shell.Introspect"),
-                "/org/gnome/Shell/Introspect",
-                Some("org.gnome.Shell.Introspect"),
+                Some("org.gnome.Shell"),
+                "/dev/wxwee/SafeIntrospect",
+                Some("dev.wxwee.SafeIntrospect"),
                 "GetWindows",
                 &(),
             )
@@ -82,5 +82,21 @@ impl Client for GnomeClient {
             });
 
         wm_class
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::client::Client;
+
+    use super::GnomeClient;
+
+    #[test]
+    fn stuff() {
+        let mut client = GnomeClient::new();
+        client.connect();
+
+        let stuff = client.current_application();
+        println!("{stuff:?}");
     }
 }
