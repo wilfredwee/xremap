@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use zbus::{blocking::Connection, zvariant::Value};
 
 use crate::client::Client;
+use serde::{Deserialize, Serialize};
 
 pub struct GnomeClient {
     connection: Option<Connection>,
@@ -24,7 +25,7 @@ impl GnomeClient {
 impl Client for GnomeClient {
     fn supported(&mut self) -> bool {
         self.connect();
-        self.connection.is_some()
+        self.current_application().is_some()
     }
 
     fn current_application(&mut self) -> Option<String> {
@@ -34,30 +35,39 @@ impl Client for GnomeClient {
             None => return None,
         };
 
-        let code = "
-            const actor = global.get_window_actors().find(a=>a.meta_window.has_focus()===true)
-            actor && actor.get_meta_window().get_wm_class()
-        ";
+        // Attempt the latest protocol
         connection.call_method(
             Some("org.gnome.Shell"),
-            "/org/gnome/Shell",
+            "/com/k0kubun/Xremap",
+            Some("com.k0kubun.Xremap"),
+            "ActiveWindow",
+            &(),
+        ) {
+            if let Ok(json) = message.body::<String>() {
+                if let Ok(window) = serde_json::from_str::<ActiveWindow>(&json) {
+                    return Some(window.wm_class);
+                }
+            }
+        // Fallback to the legacy protocol
+        } else if let Ok(message) = connection.call_method(
             Some("org.gnome.Shell"),
-            "Eval",
-            &(code),
+            "/com/k0kubun/Xremap",
+            Some("com.k0kubun.Xremap"),
+            "WMClass",
+            &(),
         ).map_err(|e| {
             eprintln!(r#"Failed to call Eval in Gnome Shell. This could be due to lack of permissions, or not running in unsafe context.
             Attempting to use SafeIntrospection instead. (https://github.com/wilfredwee/gnome-safe-introspection)
             Original error: {e:?}"#);
+            if let Ok(wm_class) = message.body::<String>() {
 
             e
         })
         .ok()
         .and_then(|message| {
-            if let Ok((_actor, json)) = message.body::<(bool, String)>() {
-                if let Ok(wm_class) = serde_json::from_str::<String>(&json) {
-                    return Some(wm_class);
-                }
+                return Some(wm_class);
             }
+        }
             return None;
         })
         .or_else(|| {
@@ -110,4 +120,12 @@ impl Client for GnomeClient {
             wm_class
         })
     }
+}
+
+#[derive(Serialize, Deserialize)]
+struct ActiveWindow {
+    #[serde(default)]
+    wm_class: String,
+    #[serde(default)]
+    title: String,
 }

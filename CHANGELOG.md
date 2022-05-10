@@ -1,3 +1,19 @@
+## v0.4.2
+
+* `--features gnome`: Support a new protocol to talk to the GNOME Shell extension
+  * Both old and new GNOME Shell extensions work with this version
+
+## v0.4.1
+
+* `--features gnome`: Show `supported: false` in the command output
+  when the GNOME Shell extension is not installed
+
+## v0.4.0
+
+* `--features gnome`: Depend on an external GNOME Shell extension, [xremap-gnome](https://github.com/xremap/xremap-gnome)
+  * If you use `--features gnome`, install [xremap's GNOME Shell extension](https://extensions.gnome.org/extension/5060/xremap/)
+  * This allows you to use xremap with GNOME 40+. Ubuntu 22.04 uses GNOME 42 for example.
+
 ## v0.3.3
 
 * Fix a bug in a nested remap with modifiers
