@@ -35,8 +35,62 @@ impl Client for GnomeClient {
             None => return None,
         };
 
+        connection
+            .call_method(
+                Some("org.gnome.Shell"),
+                "/dev/wxwee/SafeIntrospect",
+                Some("dev.wxwee.SafeIntrospect"),
+                "GetWindows",
+                &(),
+            )
+            .map_err(|e| {
+                eprintln!("Calling SafeIntrospection failed. Attempting to call the rest of the strategies.");
+                e
+            })
+            .ok()
+            .map(|message| {
+                let windows = message
+                    .body::<HashMap<u64, HashMap<String, Value<'_>>>>()
+                    .map_err(|err| {
+                        eprintln!("Error deserializing body: {:?}. Message: {message:?}", err);
+                        err
+                    })
+                    .ok()?;
+
+                let focused_window = windows.iter().find(|(_window_id, properties)| {
+                    properties
+                        .get("has-focus")
+                        .map(|val| {
+                            if let &Value::Bool(bool_val) = val {
+                                bool_val
+                            } else {
+                                eprintln!(
+                                    "Unexpectedly did not get boolean value from has-focus. Got {val:?} instead."
+                                );
+                                false
+                            }
+                        })
+                        .unwrap_or(false)
+                });
+
+                let wm_class = focused_window
+                    .and_then(|(_window_id, properties)| properties.get("wm-class"))
+                    .and_then(|wm_class| {
+                        if let Value::Str(wm_class_str) = wm_class {
+                            Some(wm_class_str.to_string())
+                        } else {
+                            eprintln!("Unexpectedly did not get string value from wm-class. Got {wm_class:?} instead.");
+                            None
+                        }
+                    });
+
+                wm_class
+            })?;
+
+        // Default strategies below:
+
         // Attempt the latest protocol
-        connection.call_method(
+        if let Ok(message) = connection.call_method(
             Some("org.gnome.Shell"),
             "/com/k0kubun/Xremap",
             Some("com.k0kubun.Xremap"),
@@ -55,70 +109,12 @@ impl Client for GnomeClient {
             Some("com.k0kubun.Xremap"),
             "WMClass",
             &(),
-        ).map_err(|e| {
-            eprintln!(r#"Failed to call Eval in Gnome Shell. This could be due to lack of permissions, or not running in unsafe context.
-            Attempting to use SafeIntrospection instead. (https://github.com/wilfredwee/gnome-safe-introspection)
-            Original error: {e:?}"#);
+        ) {
             if let Ok(wm_class) = message.body::<String>() {
-
-            e
-        })
-        .ok()
-        .and_then(|message| {
                 return Some(wm_class);
             }
         }
-            return None;
-        })
-        .or_else(|| {
-            let message = connection
-            .call_method(
-                Some("org.gnome.Shell"),
-                "/dev/wxwee/SafeIntrospect",
-                Some("dev.wxwee.SafeIntrospect"),
-                "GetWindows",
-                &(),
-            ).map_err(|e| {
-                eprintln!("Calling SafeIntrospection failed. Please read the README to troubleshoot.");
-                e
-            })
-            .ok()?;
-
-            let windows = message
-            .body::<HashMap<u64, HashMap<String, Value<'_>>>>()
-            .map_err(|err| {
-                eprintln!("Error deserializing body: {:?}. Message: {message:?}", err);
-                err
-            })
-            .ok()?;
-
-        let focused_window = windows.iter().find(|(_window_id, properties)| {
-            properties
-                .get("has-focus")
-                .map(|val| {
-                    if let &Value::Bool(bool_val) = val {
-                        bool_val
-                    } else {
-                        eprintln!("Unexpectedly did not get boolean value from has-focus. Got {val:?} instead.");
-                        false
-                    }
-                })
-                .unwrap_or(false)
-        });
-
-        let wm_class = focused_window
-            .and_then(|(_window_id, properties)| properties.get("wm-class"))
-            .and_then(|wm_class| {
-                if let Value::Str(wm_class_str) = wm_class {
-                    Some(wm_class_str.to_string())
-                } else {
-                    eprintln!("Unexpectedly did not get string value from wm-class. Got {wm_class:?} instead.");
-                    None
-                }
-            });
-
-            wm_class
-        })
+        None
     }
 }
 
