@@ -35,7 +35,7 @@ impl Client for GnomeClient {
             None => return None,
         };
 
-        connection
+        let safe_introspected = connection
             .call_method(
                 Some("org.gnome.Shell"),
                 "/dev/wxwee/SafeIntrospect",
@@ -48,7 +48,7 @@ impl Client for GnomeClient {
                 e
             })
             .ok()
-            .map(|message| {
+            .and_then(|message| {
                 let windows = message
                     .body::<HashMap<u64, HashMap<String, Value<'_>>>>()
                     .map_err(|err| {
@@ -85,7 +85,11 @@ impl Client for GnomeClient {
                     });
 
                 wm_class
-            })?;
+            });
+
+        if safe_introspected.is_some() {
+            return safe_introspected;
+        }
 
         // Default strategies below:
 
